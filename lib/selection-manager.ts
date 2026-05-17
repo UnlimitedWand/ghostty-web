@@ -253,6 +253,7 @@ export class SelectionManager {
 
     // Force redraw of previously selected lines to clear the overlay
     this.requestRender();
+    this.selectionChangedEmitter.fire();
   }
 
   /**
@@ -483,6 +484,7 @@ export class SelectionManager {
         const absoluteRow = this.viewportRowToAbsolute(cell.row);
         this.selectionEnd = { col: cell.col, absoluteRow };
         this.requestRender();
+        this.selectionChangedEmitter.fire();
 
         // Check if near edges for auto-scroll
         this.updateAutoScroll(e.offsetY, canvas.clientHeight);
@@ -559,6 +561,7 @@ export class SelectionManager {
             const absoluteRow = this.viewportRowToAbsolute(cell.row);
             this.selectionEnd = { col: cell.col, absoluteRow };
             this.requestRender();
+            this.selectionChangedEmitter.fire();
           }
         }
       }
@@ -831,6 +834,7 @@ export class SelectionManager {
       }
 
       this.requestRender();
+      this.selectionChangedEmitter.fire();
     }, SelectionManager.AUTO_SCROLL_INTERVAL);
   }
 

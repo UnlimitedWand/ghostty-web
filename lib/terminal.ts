@@ -100,7 +100,8 @@ export class Terminal implements ITerminalCore {
   // Lifecycle state
   private isOpen = false;
   private isDisposed = false;
-  private animationFrameId?: number;
+  private renderFrameId?: number;
+  private needsRender = false;
   private writeQueue: Uint8Array[] = [];
   private fontLoadGeneration = 0;
 
@@ -532,6 +533,7 @@ export class Terminal implements ITerminalCore {
       // Forward selection change events
       this.selectionManager.onSelectionChange(() => {
         this.selectionChangeEmitter.fire();
+        this.requestRender();
       });
 
       // Initialize link detection system
@@ -560,8 +562,8 @@ export class Terminal implements ITerminalCore {
       // Render initial blank screen (force full redraw)
       this.renderer.render(this.wasmTerm, true, this.viewportY, this, this.scrollbarOpacity);
 
-      // Start render loop
-      this.startRenderLoop();
+      // Request render on changes (event-driven, not continuous loop)
+      this.requestRender();
 
       // Focus input (auto-focus so user can start typing immediately)
       this.focus();
@@ -630,7 +632,8 @@ export class Terminal implements ITerminalCore {
       requestAnimationFrame(callback);
     }
 
-    // Render will happen on next animation frame
+    // Request render (will be batched with rAF)
+    this.requestRender();
   }
 
   /**
@@ -736,9 +739,9 @@ export class Terminal implements ITerminalCore {
       console.error('Terminal resize failed:', e);
     }
 
-    // Flush any writes that were queued during resize, then restart render loop
+    // Flush any writes that were queued during resize, then request render
     this.flushWriteQueue();
-    this.startRenderLoop();
+    this.requestRender();
   }
 
   /**
@@ -959,6 +962,8 @@ export class Terminal implements ITerminalCore {
       if (scrollbackLength > 0) {
         this.showScrollbar();
       }
+
+      this.requestRender();
     }
   }
 
@@ -979,6 +984,7 @@ export class Terminal implements ITerminalCore {
       this.viewportY = scrollbackLength;
       this.scrollEmitter.fire(this.viewportY);
       this.showScrollbar();
+      this.requestRender();
     }
   }
 
@@ -993,6 +999,7 @@ export class Terminal implements ITerminalCore {
       if (this.getScrollbackLength() > 0) {
         this.showScrollbar();
       }
+      this.requestRender();
     }
   }
 
@@ -1012,6 +1019,8 @@ export class Terminal implements ITerminalCore {
       if (scrollbackLength > 0) {
         this.showScrollbar();
       }
+
+      this.requestRender();
     }
   }
 
@@ -1106,6 +1115,9 @@ export class Terminal implements ITerminalCore {
       this.showScrollbar();
     }
 
+    // Request render for smooth scrolling animation
+    this.requestRender();
+
     // Continue animation
     this.scrollAnimationFrame = requestAnimationFrame(this.animateScroll);
   };
@@ -1168,13 +1180,41 @@ export class Terminal implements ITerminalCore {
   // ==========================================================================
 
   /**
-   * Cancel the render loop
+   * Cancel pending render frame
    */
   private cancelRenderLoop(): void {
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = undefined;
+    if (this.renderFrameId) {
+      cancelAnimationFrame(this.renderFrameId);
+      this.renderFrameId = undefined;
     }
+    this.needsRender = false;
+  }
+
+  /**
+   * Request a render - uses rAF to batch multiple render requests into one frame
+   */
+  private requestRender(): void {
+    if (this.isDisposed || !this.isOpen) return;
+
+    this.needsRender = true;
+
+    if (this.renderFrameId) return;
+
+    this.renderFrameId = requestAnimationFrame(() => {
+      this.renderFrameId = undefined;
+
+      if (!this.isOpen || this.isDisposed || !this.wasmTerm || !this.renderer) {
+        return;
+      }
+
+      this.renderer.render(this.wasmTerm, false, this.viewportY, this, this.scrollbarOpacity);
+
+      const cursor = this.wasmTerm.getCursor();
+      if (cursor.y !== this.lastCursorY) {
+        this.lastCursorY = cursor.y;
+        this.cursorMoveEmitter.fire();
+      }
+    });
   }
 
   /**
@@ -1185,38 +1225,6 @@ export class Terminal implements ITerminalCore {
       const data = this.writeQueue.shift()!;
       this.wasmTerm!.write(data);
     }
-  }
-
-  /**
-   * Start the render loop
-   */
-  private startRenderLoop(): void {
-    if (this.animationFrameId) return; // already running
-    const loop = () => {
-      if (!this.isDisposed && this.isOpen) {
-        // Render using WASM's native dirty tracking
-        // The render() method:
-        // 1. Calls update() once to sync state and check dirty flags
-        // 2. Only redraws dirty rows when forceAll=false
-        // 3. Always calls clearDirty() at the end
-        this.renderer!.render(this.wasmTerm!, false, this.viewportY, this, this.scrollbarOpacity);
-
-        // Check for cursor movement (Phase 2: onCursorMove event)
-        // Note: getCursor() reads from already-updated render state (from render() above)
-        const cursor = this.wasmTerm!.getCursor();
-        if (cursor.y !== this.lastCursorY) {
-          this.lastCursorY = cursor.y;
-          this.cursorMoveEmitter.fire();
-        }
-
-        // Note: onRender event is intentionally not fired in the render loop
-        // to avoid performance issues. For now, consumers can use requestAnimationFrame
-        // if they need frame-by-frame updates.
-
-        this.animationFrameId = requestAnimationFrame(loop);
-      }
-    };
-    loop();
   }
 
   /**

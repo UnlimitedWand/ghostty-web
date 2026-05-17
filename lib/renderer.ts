@@ -105,7 +105,8 @@ export class CanvasRenderer {
 
   // Cursor blinking state
   private cursorVisible: boolean = true;
-  private cursorBlinkInterval?: number;
+  private cursorBlinkFrameId?: number;
+  private cursorBlinkAccumulator: number = 0;
   private lastCursorPosition: { x: number; y: number } = { x: 0, y: 0 };
 
   // Viewport tracking (for scrolling)
@@ -806,18 +807,38 @@ export class CanvasRenderer {
   // ==========================================================================
 
   private startCursorBlink(): void {
+    // Use requestAnimationFrame for cursor blink (syncs with render cycle)
     // xterm.js uses ~530ms blink interval
-    this.cursorBlinkInterval = window.setInterval(() => {
-      this.cursorVisible = !this.cursorVisible;
-      // Note: Render loop should redraw cursor line automatically
-    }, 530);
+    const blinkInterval = 530;
+    let lastTime = performance.now();
+
+    const blink = (currentTime: number) => {
+      if (!this.cursorBlink) {
+        this.cursorBlinkFrameId = undefined;
+        return;
+      }
+
+      const delta = currentTime - lastTime;
+      lastTime = currentTime;
+      this.cursorBlinkAccumulator += delta;
+
+      if (this.cursorBlinkAccumulator >= blinkInterval) {
+        this.cursorVisible = !this.cursorVisible;
+        this.cursorBlinkAccumulator -= blinkInterval;
+      }
+
+      this.cursorBlinkFrameId = requestAnimationFrame(blink);
+    };
+
+    this.cursorBlinkFrameId = requestAnimationFrame(blink);
   }
 
   private stopCursorBlink(): void {
-    if (this.cursorBlinkInterval !== undefined) {
-      clearInterval(this.cursorBlinkInterval);
-      this.cursorBlinkInterval = undefined;
+    if (this.cursorBlinkFrameId !== undefined) {
+      cancelAnimationFrame(this.cursorBlinkFrameId);
+      this.cursorBlinkFrameId = undefined;
     }
+    this.cursorBlinkAccumulator = 0;
     this.cursorVisible = true;
   }
 

@@ -2406,7 +2406,7 @@ describe('Options Proxy handleOptionChange', () => {
     // @ts-ignore - accessing private for test
     expect(renderer.cursorBlink).toBe(true);
     // @ts-ignore - accessing private for test
-    expect(renderer.cursorBlinkInterval).toBeDefined();
+    expect(renderer.cursorBlinkFrameId).toBeDefined();
 
     // Disable cursor blink
     term.options.cursorBlink = false;

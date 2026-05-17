@@ -10,7 +10,8 @@ export declare class CanvasRenderer {
     private metrics;
     private palette;
     private cursorVisible;
-    private cursorBlinkInterval?;
+    private cursorBlinkFrameId?;
+    private cursorBlinkAccumulator;
     private lastCursorPosition;
     private lastViewportY;
     private currentBuffer;
@@ -1667,7 +1668,8 @@ export declare class Terminal implements ITerminalCore {
     readonly onCursorMove: IEvent<void>;
     private isOpen;
     private isDisposed;
-    private animationFrameId?;
+    private renderFrameId?;
+    private needsRender;
     private writeQueue;
     private fontLoadGeneration;
     private addons;
@@ -1866,17 +1868,17 @@ export declare class Terminal implements ITerminalCore {
      */
     dispose(): void;
     /**
-     * Cancel the render loop
+     * Cancel pending render frame
      */
     private cancelRenderLoop;
+    /**
+     * Request a render - uses rAF to batch multiple render requests into one frame
+     */
+    private requestRender;
     /**
      * Flush any writes that were queued during resize
      */
     private flushWriteQueue;
-    /**
-     * Start the render loop
-     */
-    private startRenderLoop;
     /**
      * Get a line from native WASM scrollback buffer
      * Implements IScrollbackProvider
